@@ -60,14 +60,6 @@ valgrind: $(TARGET)
 		--log-file=valgrind_memcheck.log \
 		./$(TARGET) -t
 	@echo "Valgrind memcheck log -> valgrind_memcheck.log"
-
-callgrind: $(TARGET)
-	@echo ">> Running Valgrind callgrind..."
-	@$(MAKE) --quiet $(TARGET)   # (re)build if needed
-	valgrind --tool=callgrind --callgrind-out-file=callgrind.out ./$(TARGET) -t
-	@echo "Callgrind output -> callgrind.out"
-
-
 # ================== everything for Part 4 ==================
 part4: all coverage gprof valgrind callgrind
 	@echo "=== Part 4 artifacts ==="
