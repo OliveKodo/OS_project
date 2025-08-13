@@ -1,4 +1,3 @@
-// tomergal40@gmail.com
 #include "graph.hpp"
 #include <iostream>
 #include <vector>
