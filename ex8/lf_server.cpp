@@ -194,14 +194,13 @@ std::string processGraphRequest(const std::string &request)
 // Leader-Follower pattern implementation
 class LeaderFollowerServer {
 private:
-    // Work item structure - represents a single client request
+    // Work item structure - now only contains socket and IP, request is read by worker
     struct WorkItem {
         int client_fd;
         std::string client_ip;
-        std::string request;
         
-        WorkItem(int fd, const std::string& ip, const std::string& req) 
-            : client_fd(fd), client_ip(ip), request(req) {}
+        WorkItem(int fd, const std::string& ip) 
+            : client_fd(fd), client_ip(ip) {}
     };
     
     // Synchronization primitives for Leader-Follower pattern
@@ -229,11 +228,11 @@ public:
         shutdown();
     }
     
-    // Add work item to the queue
-    void addWork(int client_fd, const std::string& client_ip, const std::string& request) {
+    // Add work item to the queue - only socket and IP, no pre-read request
+    void addWork(int client_fd, const std::string& client_ip) {
         {
             std::lock_guard<std::mutex> lock(work_queue_mutex);
-            work_queue.emplace(client_fd, client_ip, request);
+            work_queue.emplace(client_fd, client_ip);
             std::cout << "Added work to queue. Queue size: " << work_queue.size() << std::endl;
         }
         work_cv.notify_one(); // Wake up one waiting worker
@@ -277,7 +276,7 @@ private:
             std::cout << "Thread " << thread_id << " became LEADER\n";
             
             // Step 2: As leader, wait for work
-            WorkItem work_item(0, "", "");
+            WorkItem work_item(0, "");
             bool got_work = false;
             
             {
@@ -324,24 +323,39 @@ private:
         std::cout << "Worker thread " << thread_id << " finished\n";
     }
     
-    // Process a single client request
+    // Process a single client request - now reads request from socket
     void processRequest(int thread_id, const WorkItem& work_item) {
-        std::cout << "Thread " << thread_id << " processing request from " 
-                  << work_item.client_ip << ": " << work_item.request << std::endl;
+        std::cout << "Thread " << thread_id << " handling connection from " << work_item.client_ip << std::endl;
         
-        // Process the graph request using existing function
-        std::string response = processGraphRequest(work_item.request);
+        // Read request from client socket
+        char buffer[1024];
+        ssize_t bytes_received = recv(work_item.client_fd, buffer, sizeof(buffer) - 1, 0);
         
-        // Send response to client
-        if (send(work_item.client_fd, response.c_str(), response.length(), 0) < 0) {
-            perror("send");
+        if (bytes_received > 0) {
+            buffer[bytes_received] = '\0';
+            std::string request(buffer);
+            
+            std::cout << "Thread " << thread_id << " processing request from " 
+                      << work_item.client_ip << ": " << request << std::endl;
+            
+            // Process the graph request using existing function
+            std::string response = processGraphRequest(request);
+            
+            // Send response to client
+            if (send(work_item.client_fd, response.c_str(), response.length(), 0) < 0) {
+                perror("send");
+            }
+            
+            std::cout << "Thread " << thread_id << " completed processing for " 
+                      << work_item.client_ip << std::endl;
+        } else if (bytes_received == 0) {
+            std::cout << "Thread " << thread_id << " - Client " << work_item.client_ip << " disconnected before sending request\n";
+        } else {
+            perror("recv");
         }
         
-        // Close connection (single request per connection model)
+        // Close connection
         close(work_item.client_fd);
-        
-        std::cout << "Thread " << thread_id << " completed processing for " 
-                  << work_item.client_ip << std::endl;
     }
 };
 
@@ -431,7 +445,7 @@ int main(int argc, char *argv[])
     // Initialize Leader-Follower server
     lf_server = std::make_unique<LeaderFollowerServer>();
 
-    // Main accept loop
+    // Main accept loop - now only handles connection acceptance
     while (running)
     {
         // Use select to check for incoming connections with timeout
@@ -477,20 +491,8 @@ int main(int argc, char *argv[])
         inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
         std::cout << "New connection from " << client_ip << ":" << ntohs(client_addr.sin_port) << std::endl;
 
-        // Read client request immediately
-        char buffer[1024];
-        ssize_t bytes_received = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
-        
-        if (bytes_received > 0) {
-            buffer[bytes_received] = '\0';
-            std::string request(buffer);
-            
-            // Add work to Leader-Follower queue instead of creating new thread
-            lf_server->addWork(client_fd, client_ip, request);
-        } else {
-            // If we couldn't read the request, close the connection
-            close(client_fd);
-        }
+        // Add work to Leader-Follower queue - socket will be read by worker thread
+        lf_server->addWork(client_fd, client_ip);
     }
 
     close(listen_fd);
