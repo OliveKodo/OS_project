@@ -17,6 +17,10 @@ $(CLIENT_TARGET): $(CLIENT_SOURCES:.cpp=.o)
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+valgrind: $(SERVER_TARGET) $(CLIENT_TARGET)
+	valgrind --leak-check=full --show-leak-kinds=all ./$(SERVER_TARGET) & \
+	valgrind --leak-check=full --show-leak-kinds=all ./$(CLIENT_TARGET)
+
 clean:
 	rm -f *.o $(SERVER_TARGET) $(CLIENT_TARGET)
 

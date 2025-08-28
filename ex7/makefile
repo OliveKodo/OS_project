@@ -8,6 +8,8 @@ SERVER_SOURCES = tcp_server.cpp graph.cpp point.cpp graph_algorithms.cpp
 CLIENT_SOURCES = client.cpp
 TEST_SOURCES = test_algorithms.cpp graph.cpp point.cpp graph_algorithms.cpp
 
+TARGET = $(SERVER_TARGET) $(CLIENT_TARGET) $(SERVER_SOURCES) $(CLIENT_SOURCES) $(TEST_TARGET) 
+
 all: $(SERVER_TARGET) $(CLIENT_TARGET) $(TEST_TARGET)
 
 $(SERVER_TARGET): $(SERVER_SOURCES:.cpp=.o)
@@ -21,6 +23,9 @@ $(TEST_TARGET): $(TEST_SOURCES:.cpp=.o)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+	
+valgrind: $(TARGET)
+	valgrind --leak-check=full --show-leak-kinds=all ./$(TARGET)
 
 clean:
 	rm -f *.o $(SERVER_TARGET) $(CLIENT_TARGET) $(TEST_TARGET)
